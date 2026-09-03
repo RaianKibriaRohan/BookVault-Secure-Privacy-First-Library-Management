@@ -1,0 +1,130 @@
+@import "tailwindcss";
+
+/* Tailwind v4 has no config file - the design tokens live here and generate
+   utilities directly (bg-surface, text-accent, border-line, and so on). */
+@theme {
+  --color-ink: #060a13;
+  --color-surface: #0e1524;
+  --color-surface-2: #16203a;
+  --color-surface-3: #1d2a4a;
+  --color-line: #22304f;
+  --color-line-soft: #1a2540;
+
+  --color-accent: #34d399;
+  --color-accent-dim: #10b981;
+  --color-accent-2: #60a5fa;
+  --color-warn: #fbbf24;
+  --color-danger: #fb7185;
+  --color-violet: #a78bfa;
+
+  --color-muted: #93a4c4;
+  --color-faint: #64748b;
+
+  --font-sans: ui-sans-serif, system-ui, "Segoe UI", Inter, Roboto, sans-serif;
+  --font-mono: ui-monospace, "Cascadia Code", "SF Mono", Consolas, monospace;
+
+  --radius-xl2: 1rem;
+}
+
+html {
+  background: var(--color-ink);
+  color-scheme: dark;
+}
+
+body {
+  margin: 0;
+  background: var(--color-ink);
+  color: #e6edf8;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+* {
+  border-color: var(--color-line);
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+::selection {
+  background: color-mix(in oklab, var(--color-accent) 35%, transparent);
+}
+
+/* Thin, unobtrusive scrollbars that match the vault palette. */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-surface-3);
+  border-radius: 99px;
+  border: 3px solid var(--color-ink);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #2c3d68;
+}
+
+@utility mono {
+  font-family: var(--font-mono);
+  font-variant-ligatures: none;
+}
+
+/* The faint grid behind the landing hero. */
+@utility vault-grid {
+  background-image:
+    linear-gradient(to right, rgba(52, 211, 153, 0.06) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(52, 211, 153, 0.06) 1px, transparent 1px);
+  background-size: 46px 46px;
+  mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, black 40%, transparent 100%);
+}
+
+@utility glow {
+  box-shadow: 0 0 0 1px rgba(52, 211, 153, 0.18), 0 18px 60px -20px rgba(52, 211, 153, 0.35);
+}
+
+@keyframes bv-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@utility fade-up {
+  animation: bv-fade-up 0.35s ease-out both;
+}
+
+@keyframes bv-pulse-ring {
+  0% {
+    box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.35);
+  }
+  70% {
+    box-shadow: 0 0 0 10px rgba(52, 211, 153, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(52, 211, 153, 0);
+  }
+}
+
+@utility pulse-ring {
+  animation: bv-pulse-ring 2s ease-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}

@@ -1,0 +1,525 @@
+\documentclass[11pt]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[a4paper, margin=0.9in]{geometry}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{fancyhdr}
+\usepackage{hyperref}
+
+\definecolor{ok}{RGB}{16,122,86}
+\definecolor{warn}{RGB}{176,110,10}
+\definecolor{slate}{RGB}{70,80,100}
+
+\hypersetup{colorlinks=true, linkcolor=ok, urlcolor=ok}
+
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{BookVault}
+\rhead{Demonstration \& Viva Guide}
+\cfoot{\thepage}
+
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{5pt}
+
+\newcommand{\proof}[1]{\textcolor{ok}{\textbf{Proves:}} #1}
+\newcommand{\note}[1]{\textcolor{warn}{\textbf{Note:}} #1}
+
+\title{\textbf{BookVault} \\[4pt]
+\large Demonstration \& Viva Guide}
+\author{CSE447 Lab Project $\mid$ Choice 2}
+\date{}
+
+\begin{document}
+
+\maketitle
+\thispagestyle{fancy}
+
+\begin{center}
+\fbox{\begin{minipage}{0.92\textwidth}
+\textbf{How to use this guide.} Part A and B are click-by-click walkthroughs
+(patron, then librarian). Part C shows how to demonstrate each of the nine
+security features. Part D maps every lab requirement to where it lives.
+Part E proves the cryptography from the terminal. Part F is a list of likely
+viva questions with short answers.
+\end{minipage}}
+\end{center}
+
+% ==========================================================
+\section{Before you start}
+
+Open a terminal in the project folder and run:
+
+\begin{verbatim}
+   npm run dev
+\end{verbatim}
+
+This starts both parts of the system:
+
+\begin{itemize}[leftmargin=1.4cm, itemsep=2pt]
+  \item \textbf{API} (Express backend) on \texttt{http://localhost:4000}
+  \item \textbf{App} (React frontend) on \texttt{http://localhost:5173}
+\end{itemize}
+
+Open \texttt{http://localhost:5173} in a browser.
+
+\subsection*{Accounts}
+
+\begin{center}
+\begin{tabular}{lll}
+\toprule
+\textbf{Role} & \textbf{Username} & \textbf{Password} \\
+\midrule
+Head Librarian & \texttt{librarian} & \texttt{Vault-Admin-2026} \\
+Patron & \texttt{faiza} & \texttt{Reading-Room-77} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection*{Signing in takes two steps}
+
+\begin{enumerate}[leftmargin=1.4cm, itemsep=2pt]
+  \item Enter username and password, press \textbf{Continue}.
+  \item A six-digit code is asked for. Click \textbf{Show current code},
+        then type those six digits.
+\end{enumerate}
+
+\note{Only one session per account is live at a time. Signing in as the
+librarian signs the patron out. To show both at once, use two different
+browsers (for example Chrome and Firefox), not two tabs.}
+
+% ==========================================================
+\section{Part A --- Patron walkthrough}
+
+Sign in as \texttt{faiza}.
+
+\subsection*{F1. Registration \& Login}
+
+Sign out and click \textbf{Create a patron account}. Fill in the form.
+
+After submitting, the screen shows a \textbf{TOTP secret} once and never again.
+
+\proof{Your password is never stored. The database keeps a random 128-bit salt
+and \texttt{SHA-256(salt + password)}. Your email, phone, card number, name and
+address are each encrypted with RSA-2048 before being saved.}
+
+\subsection*{F2. Browse the catalog}
+
+Go to \textbf{Catalog}. Search for ``crypt''. Click a genre chip. Switch the
+dropdown to ``Available now''.
+
+\proof{Book data is \emph{not} secret --- the library must be searchable --- so
+it is stored as normal text. Only \emph{your} activity is encrypted.}
+
+\subsection*{F3. Borrow a book}
+
+Open any book. Read the panel on the right, then press \textbf{Borrow this book}.
+
+\proof{A record containing the book id, title, author and dates is encrypted
+with ECIES (elliptic curve) and given an HMAC tag before it touches the
+database.}
+
+\subsection*{F6. My Vault}
+
+Go to \textbf{My Vault}. You see the book, a due-date countdown, and a green
+\textbf{Verified} badge.
+
+Now press \textbf{Stored row} on that loan.
+
+\proof{The app shows you the actual ciphertext and HMAC tag stored in the
+database. The readable version above it exists only in memory --- it is never
+saved in readable form.}
+
+\subsection*{F4 + F5. Return a book and get fined}
+
+To create an overdue book on demand, run this in a terminal:
+
+\begin{verbatim}
+   node scripts/backdate.mjs faiza 18
+\end{verbatim}
+
+Then go back to \textbf{My Vault} and press \textbf{Return}.
+
+You should get a fine of exactly \textbf{185 BDT} plus a replacement notice:
+
+\begin{center}
+\begin{tabular}{lrrr}
+\toprule
+\textbf{Tier} & \textbf{Days} & \textbf{Rate} & \textbf{Subtotal} \\
+\midrule
+Days 1--7   & 7 & 5 BDT  & 35 BDT \\
+Days 8--14  & 7 & 10 BDT & 70 BDT \\
+Day 15+     & 4 & 20 BDT & 80 BDT \\
+\midrule
+\textbf{Total} & \textbf{18} & & \textbf{185 BDT} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Now try to borrow another book --- you will be blocked. Press \textbf{Pay},
+then try again --- it works.
+
+\proof{The tiered fine rule from the proposal, the borrowing block while fines
+are unpaid, and the replacement notice at 15+ days.}
+
+\subsection*{F7. Private reviews}
+
+Go to \textbf{Reviews} and write one. Only books you have returned appear in
+the list.
+
+\proof{The review text \emph{and the name of the book} are both inside the
+ciphertext. The librarian cannot even tell which book you wrote about.}
+
+\subsection*{F8. Secure chat}
+
+Go to \textbf{Chat} and send a message to the librarian.
+
+\proof{The message is encrypted with the librarian's RSA public key. A second
+copy is encrypted with your own key so you can still read your own outbox. The
+tag is an HMAC using a shared secret both sides compute with ECDH.}
+
+\subsection*{F9. Profile}
+
+Go to \textbf{Profile}. A green \textbf{CBC-MAC verified} banner sits at the
+top. Press \textbf{Show} on the right panel to see the stored ciphertext.
+
+Edit any field and save --- the app tells you which fields were re-encrypted.
+
+\proof{Each field is separately RSA-encrypted, and one CBC-MAC tag covers the
+whole profile so a field cannot be swapped or deleted without detection.}
+
+\subsection*{F10. Key rotation}
+
+Go to \textbf{Security}. Note the key version (\texttt{v1}) and the two
+fingerprints. Press \textbf{Rotate my keys}, confirm with your password.
+
+\proof{New RSA and ECC key pairs are made, every record you own is decrypted
+with the old keys and re-encrypted with the new ones, and the old keys are
+\emph{deleted}. The report shows the count per table and the version becomes
+\texttt{v2}.}
+
+% ==========================================================
+\newpage
+\section{Part B --- Librarian walkthrough}
+
+Sign out, then sign in as \texttt{librarian}.
+
+\subsection*{A5 + the main privacy proof: Overview}
+
+The \textbf{Overview} page has a panel called \textbf{What the librarian can
+see}. Use the four buttons to switch between checkouts, reviews, fines and
+chat messages.
+
+\proof{\textbf{This is the most important screen in the whole demo.} It is a
+direct read of the database with full admin access --- and all you see is
+hex. The librarian holds no key that opens it.}
+
+\subsection*{A1. Book inventory}
+
+Go to \textbf{Books}. Add a book, edit one, try to delete one that is on loan
+(it will refuse).
+
+\proof{Only the admin can write to the catalog. Patrons have read-only access.}
+
+\subsection*{A2. Account management}
+
+Go to \textbf{Patrons}. You can see usernames, join dates, last login and
+record counts. Suspend a patron.
+
+\proof{Notice what is \emph{missing}: no email, no phone, no reading history.
+Suspension instantly kills that patron's sessions.}
+
+\subsection*{A3. Fine dashboard}
+
+Go to \textbf{Fines}. Click on a ciphertext cell in the last column.
+
+\proof{The librarian sees the \emph{amount} (needed to run the library) but the
+record body --- which book, which dates --- stays encrypted.}
+
+\subsection*{A4. Reply to patrons}
+
+Go to \textbf{Chat} and reply to the message you sent as the patron.
+
+\subsection*{A5. Audit log}
+
+Go to \textbf{Audit Log}. Set the outcome filter to \textbf{failure}, then
+\textbf{warning}.
+
+\proof{Logins, failed passwords, wrong OTP codes, RBAC refusals, tampering and
+key rotations are all recorded --- but only metadata, never content.}
+
+% ==========================================================
+\section{Part C --- Showing the nine security features}
+
+\renewcommand{\arraystretch}{1.35}
+\begin{longtable}{@{}p{0.4cm} p{4.2cm} p{10.3cm}@{}}
+\toprule
+\textbf{\#} & \textbf{Feature} & \textbf{How to show it} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{\#} & \textbf{Feature} & \textbf{How to show it} \\
+\midrule
+\endhead
+
+1 & Registration \& Login &
+Register a new account. Then open Supabase $\rightarrow$ Table Editor
+$\rightarrow$ \texttt{users}. The \texttt{password\_hash} column is a hash, and
+\texttt{email\_enc} is unreadable hex. \\
+
+2 & Two-Factor Authentication &
+On the sign-in screen, enter the correct password and stop. You get a
+challenge, \emph{not} a session. Enter a wrong code --- refused. Only the
+correct code signs you in. \\
+
+3 & Encrypted User Profile &
+Profile page $\rightarrow$ \textbf{Show}. Compare the readable fields on the
+left with the ciphertext on the right. \\
+
+4 & Key Management Module &
+Security page: fingerprints, key version, and the \textbf{Rotate my keys}
+button with its report. \\
+
+5 & Encrypted Posts &
+Borrow a book and write a review, then look at the librarian's Overview panel
+for those same rows. \\
+
+6 & MAC Integrity Layer &
+In My Vault, press \textbf{Simulate tampering}, then reload. The badge turns
+red and decryption is refused. \emph{(See the box below.)} \\
+
+7 & Role-Based Access Control &
+While signed in as the patron, open
+\texttt{localhost:4000/api/admin/users} in the same browser. You get a
+\texttt{403 FORBIDDEN}, and an \texttt{rbac\_denied} entry appears in the audit
+log. \emph{(See the box below --- this is the important version.)} \\
+
+8 & Secure Chat &
+Send a message, then check the librarian's Overview $\rightarrow$ Chat
+messages. The body is hex. \\
+
+9 & Secure Session Management &
+Sign in as the patron in one browser, then sign in again in another. The first
+one is dead --- one session per account. \\
+
+\bottomrule
+\end{longtable}
+
+\subsection*{The tamper demo (feature 6) --- do this one slowly}
+
+This is the clearest single demonstration in the project.
+
+\begin{enumerate}[leftmargin=1.4cm, itemsep=3pt]
+  \item In \textbf{My Vault}, note the loan shows a green \textbf{Verified} badge.
+  \item Press \textbf{Simulate tampering}. This flips one character of the
+        stored ciphertext in the database --- exactly what an attacker with
+        database access would do.
+  \item Reload the page.
+  \item The row turns red: \textbf{Tampered --- MAC mismatch}. The book title
+        is gone, and the \textbf{Return} button is disabled.
+  \item Sign in as the librarian $\rightarrow$ \textbf{Audit Log}. An
+        \texttt{integrity\_failure} warning has been recorded.
+\end{enumerate}
+
+\textbf{Why this matters:} the system checks the MAC \emph{before} attempting
+to decrypt. So altered data is never turned into readable output --- it is
+refused. That is called \emph{encrypt-then-MAC}.
+
+\subsection*{The RBAC demo (feature 7) --- show the server, not the screen}
+
+If you only type \texttt{localhost:5173/admin} as a patron, the page says
+``not authorised'' --- but that is just the \emph{browser} hiding a menu. A
+teacher may point out that hiding a page is not security.
+
+So show the server refusing instead. While signed in as the patron, open this
+address in the same browser:
+
+\begin{verbatim}
+   http://localhost:4000/api/admin/users
+\end{verbatim}
+
+You get back:
+
+\begin{verbatim}
+   {"error":{"code":"FORBIDDEN",
+             "message":"This area is restricted to admin accounts."}}
+\end{verbatim}
+
+Now sign in as the librarian and open \textbf{Audit Log}. There is a new red
+\texttt{rbac\_denied} row:
+
+\begin{verbatim}
+   GET /api/admin/users requires admin, caller is patron
+\end{verbatim}
+
+\textbf{Why this matters:} your session cookie was sent, you were properly
+authenticated --- and the server still said no, because of your \emph{role}.
+That is real access control, checked on the server every single request.
+
+% ==========================================================
+\newpage
+\section{Part D --- Lab requirements: where each one lives}
+
+\renewcommand{\arraystretch}{1.3}
+\begin{longtable}{@{}p{0.4cm} p{6.2cm} p{8.3cm}@{}}
+\toprule
+\textbf{\#} & \textbf{Requirement} & \textbf{Where it is} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{\#} & \textbf{Requirement} & \textbf{Where it is} \\
+\midrule
+\endhead
+
+1 & Login \& registration modules & \texttt{server/src/routes/auth.js} \\
+2 & All user info encrypted before storage & RSA per field ---
+    \texttt{server/src/services/records.js} \\
+3 & Passwords hashed + salted & Custom SHA-256, 128-bit salt ---
+    \texttt{server/src/crypto/password.js} \\
+4 & Two-step authentication & Password, then HMAC-TOTP. Session issued only
+    after both pass. \\
+5 & Key Management Module & \texttt{server/src/services/keyManagement.js} \\
+6 & Create / view / edit posts, auto-encrypted & Borrow, reviews, fines ---
+    \texttt{routes/checkouts.js}, \texttt{reviews.js}, \texttt{fines.js} \\
+7 & No plaintext in the database & \texttt{db/schema.sql} has no plaintext
+    content column. Verify in Supabase. \\
+8 & MAC for integrity & HMAC-SHA256 on records and chat, CBC-MAC on profile \\
+9 & Only asymmetric encryption & RSA-2048 and ECIES over secp256k1. No AES
+    anywhere. \\
+10 & At least two asymmetric algorithms & RSA for profile and chat; ECC for
+    records, reviews, fines \\
+11 & RBAC & \texttt{server/src/middleware/auth.js}, enforced server-side \\
+12 & Secure session management & \texttt{server/src/services/session.js} \\
+
+\bottomrule
+\end{longtable}
+
+% ==========================================================
+\section{Part E --- Proving the cryptography}
+
+All algorithms are written by hand. Nothing uses Node's \texttt{crypto}
+module or any crypto library.
+
+\subsection*{1. Run the test suite}
+
+\begin{verbatim}
+   npm test
+\end{verbatim}
+
+\textbf{Result: 107 tests pass.} This checks:
+
+\begin{itemize}[leftmargin=1.4cm, itemsep=2pt]
+  \item SHA-256 against the official published values (FIPS 180-4)
+  \item HMAC-SHA256 against the official RFC 4231 test cases
+  \item The prime test against Carmichael numbers (numbers that fool weaker tests)
+  \item RSA encrypt/decrypt, including the exact maximum message size
+  \item Elliptic curve maths ($n \times G$ = point at infinity, and others)
+  \item That tampered ciphertext is always rejected
+  \item \textbf{A scan that fails the build if any file imports a crypto library}
+\end{itemize}
+
+That last one is the strongest single answer to ``did you really write it
+yourself?''
+
+\subsection*{2. Run the full system test}
+
+\begin{verbatim}
+   node scripts/smoke-test.mjs
+\end{verbatim}
+
+\textbf{Result: 79 checks pass.} It registers a user, signs in with both
+factors, borrows, goes overdue, gets fined 185 BDT, pays, reviews, chats,
+rotates keys, and confirms the database holds no readable data.
+
+\subsection*{3. Live in the browser}
+
+Open \texttt{http://localhost:4000/api/lab/self-test}
+
+Runs the published test values live and returns \texttt{17/17}. No login
+needed --- your teacher can open it directly.
+
+% ==========================================================
+\newpage
+\section{Part F --- Likely questions and short answers}
+
+\textbf{Q. Where is my password stored?} \\
+Nowhere. Only a random salt and \texttt{SHA-256(salt + password)}. The password
+itself is never written down.
+
+\textbf{Q. Why two different asymmetric algorithms?} \\
+RSA for small, occasional data (profile fields, chat messages). ECC/ECIES for
+frequent, larger data (loans, reviews, fines) because it gives much smaller
+ciphertext for the same strength.
+
+\textbf{Q. Why no AES or any symmetric cipher?} \\
+Requirement 9 forbids it. Everything is RSA or ECC.
+
+\textbf{Q. Then how is CBC-MAC built without a block cipher?} \\
+The 128-bit block function is \texttt{SHA-256(key + block)} truncated to 16
+bytes, chained in CBC mode. A length prefix is added first, which blocks the
+classic CBC-MAC forgery attack.
+
+\textbf{Q. Can the librarian read patron data?} \\
+No. Private keys are stored wrapped with a value derived from the patron's own
+password. They are unwrapped only during that patron's session and kept in the
+server's memory --- never written to disk.
+
+\textbf{Q. What happens if the whole database leaks?} \\
+The attacker gets ciphertext, MAC tags, salted hashes, and wrapped keys they
+cannot unwrap without each user's password.
+
+\textbf{Q. Why is \texttt{due\_date} readable but the book is not?} \\
+The library needs due dates to work at all. But \texttt{book\_id} is
+deliberately \emph{not} stored in readable form, so nobody with database access
+can build a picture of what you read.
+
+\textbf{Q. What stops someone replaying a chat message?} \\
+The timestamp is included in the HMAC calculation. Change the time and the tag
+no longer matches.
+
+\textbf{Q. What is the session token?} \\
+256 random bits. Only its SHA-256 hash is stored. The cookie is HttpOnly, tied
+to your IP and browser, expires after 30 minutes idle, and only one session per
+account is allowed.
+
+\textbf{Q. Why is Row Level Security disabled in Supabase?} \\
+Because the proposal says so. Supabase is used only as a database --- all
+access control is written by hand in the Express backend, which is what
+requirement 11 asks for. Turning on RLS would hand that job to Supabase.
+
+\textbf{Q. Where does the randomness come from?} \\
+\texttt{crypto.getRandomValues()} only --- the one operating-system call the
+lab permits. It is used in exactly one file,
+\texttt{server/src/crypto/random.js}, and the test suite enforces that.
+
+\textbf{Q. What happens to old keys after rotation?} \\
+They are deleted from the database, not archived. An archived key is a key that
+can still be stolen.
+
+\subsection*{Honest limitations (good to say before being asked)}
+
+\begin{itemize}[leftmargin=1.4cm, itemsep=3pt]
+  \item Encryption happens on the \textbf{server}, not in the browser. So the
+        server sees data briefly while you are signed in. True end-to-end
+        encryption would need the crypto to run in the browser.
+  \item Restarting the server logs everybody out, because unwrapped keys live
+        only in memory. That is the cost of never storing keys in usable form.
+  \item The tamper demo button is a teaching tool. It is switched off by
+        setting \texttt{ENABLE\_LAB\_ROUTES=false} in \texttt{server/.env}.
+\end{itemize}
+
+\vspace{1em}
+\begin{center}
+\fbox{\begin{minipage}{0.92\textwidth}
+\centering
+\textbf{One-line summary:} the librarian runs the library; the patron owns the
+data. Every record is encrypted before storage and its integrity is checked
+before it is ever read back.
+\end{minipage}}
+\end{center}
+
+\end{document}

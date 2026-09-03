@@ -1,0 +1,320 @@
+\documentclass[12pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{geometry}
+\geometry{a4paper, margin=1in}
+\usepackage{enumitem}
+\usepackage{array}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{fancyhdr}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue!70!black,
+    urlcolor=blue!70!black
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\rhead{CSE447 Lab Project}
+\lhead{BookVault}
+\cfoot{\thepage}
+
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{6pt}
+
+\begin{document}
+
+% ============================================================
+\begin{center}
+    {\LARGE\bfseries BookVault -- Secure Privacy-First Library Management}\\[6pt]
+    {\large CSE447 Lab Project $\mid$ Choice 2}\\[4pt]
+    {\normalsize Stack: Express / Node.js $\cdot$ Supabase (PostgreSQL) $\cdot$ React + TypeScript $\cdot$ Tailwind CSS v4}\\[2pt]
+    {\small\itshape All cryptographic algorithms implemented from scratch -- no built-in crypto libraries.}
+\end{center}
+\vspace{0.3cm}
+\hrule
+\vspace{0.5cm}
+
+% ============================================================
+\section{Overview}
+
+BookVault is a library management web application focused on patron privacy, where all sensitive data --- reading histories, checkout records, fines, book reviews, chat messages, and user profiles --- is encrypted before storage and decrypted only upon authorized retrieval. Checkout records, book reviews, and fine records act as the ``posts,'' and patron details act as the ``profile'' required by the lab specification.
+
+The goal is to build a working system where a patron's reading habits, personal information, and communication with the librarian stay completely protected from surveillance or database leaks --- even the Head Librarian (admin) cannot read patrons' encrypted data.
+
+% ============================================================
+\section{Users \& Roles}
+
+\begin{itemize}[leftmargin=2cm]
+    \item \textbf{Regular User (Patron):} Register/login with 2FA, browse catalog, borrow and return books, pay fines, write private book reviews, chat with the librarian, manage profile, and rotate encryption keys.
+    \item \textbf{Admin (Head Librarian):} Manage book inventory and user account status, view fine summaries, reply to patron chat messages, and view audit logs --- but \textbf{cannot} decrypt patrons' reading history, reviews, profile details, or fine record content.
+\end{itemize}
+
+% ============================================================
+\section{Website Features}
+
+\subsection{Patron Features}
+
+\subsubsection{F1. Registration \& Login}
+\begin{itemize}
+    \item Patron registers with: username, email, phone, library card number, and password.
+    \item \textbf{Password:} A random 128-bit salt is generated; the password is hashed as \texttt{SHA-256(salt $\|$ password)} using a \textbf{custom SHA-256} implementation. Stored as \texttt{salt:hash}.
+    \item \textbf{Email, phone, library card number:} Each field is individually encrypted with the patron's \textbf{RSA public key} before storage.
+    \item Upon registration, the Key Management Module generates the patron's \textbf{RSA key pair} (for profile and chat) and \textbf{ECC key pair} (for records and reviews).
+    \item On login: input password is hashed with the stored salt and compared. On match, a 2FA challenge is triggered.
+    \item \textbf{Two-Factor Authentication:} A 6-digit TOTP code is generated via \texttt{HMAC-SHA256(shared\_secret, $\lfloor$unix\_timestamp / 30$\rfloor$)} (from scratch). The patron must enter the code within a 60-second window. Only after \textbf{both factors pass} is a session token issued.
+\end{itemize}
+
+\subsubsection{F2. Browse Book Catalog}
+\begin{itemize}
+    \item Patrons can search and browse the library's book collection by title, author, or genre.
+    \item Availability status (Available / Checked Out) is displayed.
+    \item Catalog data is \textbf{not sensitive} and is stored in plaintext --- only user-generated data is encrypted.
+\end{itemize}
+
+\subsubsection{F3. Borrow a Book (Checkout)}
+\begin{itemize}
+    \item Patron clicks ``Borrow'' on an available book. The system creates a checkout record with a due date (e.g., 14 days).
+    \item The checkout record (\texttt{book\_id, book\_title, checkout\_date, due\_date, status}) is \textbf{ECC/ECIES encrypted} using the patron's ECC public key.
+    \item An \textbf{HMAC-SHA256 tag} is computed over the ciphertext and stored alongside.
+    \item \texttt{due\_date} and \texttt{status} are also stored in plaintext so the system can enforce due dates without decryption.
+    \item The book's available copy count is decremented.
+\end{itemize}
+
+\subsubsection{F4. Return a Book}
+\begin{itemize}
+    \item Patron clicks ``Return'' on an active checkout in their dashboard.
+    \item The system checks if the return is on time or overdue:
+    \begin{itemize}
+        \item \textbf{On time:} Status updated to \texttt{returned}; encrypted record re-tagged with a new HMAC.
+        \item \textbf{Overdue:} Fine is calculated and a fine record is created (see Fine System).
+    \end{itemize}
+    \item The book's available copy count is incremented.
+\end{itemize}
+
+\subsubsection{F5. Fine System (Late Return Penalty)}
+
+When a patron returns a book after the due date, the system automatically calculates and records a fine.
+
+\begin{center}
+\begin{tabular}{lll}
+    \toprule
+    \textbf{Days Overdue} & \textbf{Fine Rate} & \textbf{Additional Action} \\
+    \midrule
+    1 -- 7 days   & 5 BDT / day  & --- \\
+    8 -- 14 days  & 10 BDT / day & --- \\
+    15+ days      & 20 BDT / day & Book replacement notice issued \\
+    \bottomrule
+\end{tabular}
+\end{center}
+
+\begin{itemize}
+    \item Fine records are \textbf{ECC/ECIES encrypted} and \textbf{HMAC-tagged} before storage.
+    \item Patron is \textbf{blocked from borrowing} new books until all fines are paid.
+    \item Fine payment is simulated (patron clicks ``Pay Fine'' to clear the balance).
+    \item Admin can view fine summaries (username, amount, payment status) but \textbf{cannot} decrypt fine record content.
+\end{itemize}
+
+\textbf{Example:} Due: Aug 1 $\rightarrow$ Returned: Aug 19 $\rightarrow$ 18 days overdue.\\
+Fine = $(7 \times 5) + (7 \times 10) + (4 \times 20) = 35 + 70 + 80 = \textbf{185\ BDT}$ + replacement notice.
+
+\subsubsection{F6. My Vault -- Reading History \& Active Borrows}
+\begin{itemize}
+    \item Private patron dashboard showing: currently borrowed books (with due date countdown), overdue books (highlighted with fine amount), past checkouts, outstanding fines, and private reviews.
+    \item For each record: system fetches ciphertext $\rightarrow$ recomputes HMAC $\rightarrow$ compares $\rightarrow$ if mismatch, flags as tampered and blocks decryption $\rightarrow$ if valid, decrypts with patron's ECC private key.
+    \item Data is decrypted only in memory; never re-stored as plaintext.
+\end{itemize}
+
+\subsubsection{F7. Write \& View Private Book Reviews}
+\begin{itemize}
+    \item After returning a book, patrons can write private reviews or reading notes.
+    \item Reviews are encrypted with \textbf{ECC/ECIES} and tagged with \textbf{HMAC-SHA256}.
+    \item Only the patron can view their own reviews; admin cannot decrypt.
+\end{itemize}
+
+\subsubsection{F8. Book Request via Secure Chat}
+\begin{itemize}
+    \item Patron can message the Head Librarian to request new books, report damaged copies, or ask about account issues.
+    \item \textbf{Encryption:} Each message is encrypted with the recipient's \textbf{RSA public key} (only the recipient can read it).
+    \item \textbf{Integrity:} An \textbf{HMAC tag} is computed by the sender over the ciphertext (proves authenticity and detects tampering).
+    \item \textbf{Replay protection:} The timestamp is included in the HMAC computation.
+    \item DB stores in a \texttt{chat\_messages} table: \texttt{sender\_id, recipient\_id, encrypted\_body, hmac\_tag, timestamp}.
+    \item On read: HMAC verified first $\rightarrow$ if valid, decrypted with recipient's RSA private key.
+\end{itemize}
+
+\subsubsection{F9. Profile Management}
+\begin{itemize}
+    \item Patron can view and update personal details (name, email, phone, address, library card).
+    \item All fields are individually encrypted with \textbf{RSA} (patron's public key).
+    \item \textbf{CBC-MAC} tag computed over the profile blob for integrity verification.
+    \item On view: CBC-MAC verified $\rightarrow$ RSA decrypted $\rightarrow$ displayed in memory only.
+    \item On update: new value RSA-encrypted $\rightarrow$ CBC-MAC recomputed $\rightarrow$ stored.
+\end{itemize}
+
+\subsubsection{F10. Key Rotation (Privacy Reset)}
+\begin{itemize}
+    \item Patron can request key rotation from their security settings.
+    \item KMM generates new RSA + ECC key pairs.
+    \item All existing encrypted records are: decrypted with old keys $\rightarrow$ re-encrypted with new keys $\rightarrow$ HMAC/CBC-MAC recomputed.
+    \item Old keys are permanently deleted.
+\end{itemize}
+
+\subsection{Admin (Head Librarian) Features}
+
+\subsubsection{A1. Book Inventory Management}
+Add, edit, or remove books from the catalog (title, author, ISBN, genre, copies). Only the admin can write to the catalog; patrons have read-only access.
+
+\subsubsection{A2. User Account Management}
+View the list of registered patrons and manage account status (suspend/reactivate). Admin can see usernames, registration dates, and account status, but \textbf{cannot} see encrypted profile fields (email, phone, library card) or reading history.
+
+\subsubsection{A3. Fine Management Dashboard}
+View an overview of all outstanding fines: patron username, fine amount, days overdue, and payment status. Fine record content remains encrypted.
+
+\subsubsection{A4. Secure Chat -- Reply to Patrons}
+Read and reply to patron messages using the same RSA encryption + HMAC integrity pipeline. Admin's replies are encrypted with the patron's RSA public key.
+
+\subsubsection{A5. Audit Log Viewer}
+View a log of security-relevant events: logins, failed attempts, 2FA results, key rotations, fine payments, account changes. Logs contain event metadata only --- no encrypted content.
+
+% ============================================================
+\section{The 9 Security Features}
+
+\begin{center}
+\renewcommand{\arraystretch}{1.4}
+\begin{tabular}{c p{4.5cm} p{7.5cm}}
+    \toprule
+    \textbf{\#} & \textbf{Security Feature} & \textbf{Implementation in BookVault} \\
+    \midrule
+    1 & Registration \& Login & Custom SHA-256 + salt for passwords; RSA encryption for user info fields. \\
+    2 & Two-Factor Authentication & HMAC-based TOTP as second factor after password verification. \\
+    3 & Encrypted User Profile & All profile fields individually encrypted with RSA; admin cannot read. \\
+    4 & Key Management Module & Generates, stores, distributes, and rotates RSA + ECC key pairs per user. \\
+    5 & Encrypted Posts (Checkout, Reviews, Fines) & All records ECC/ECIES encrypted before database write. \\
+    6 & MAC Integrity Layer & HMAC-SHA256 on records, reviews, fines, and chat; CBC-MAC on profile blobs. \\
+    7 & Role-Based Access Control & Patron vs.\ Admin privileges strictly separated and enforced server-side. \\
+    8 & Secure Patron--Librarian Chat & Messages RSA-encrypted + HMAC-tagged; timestamp-based replay protection. \\
+    9 & Secure Session Management & Cryptographically random tokens, HttpOnly cookies, IP fingerprinting, 30-min idle timeout, single-session enforcement. \\
+    \bottomrule
+\end{tabular}
+\end{center}
+
+% ============================================================
+\section{Security Requirements Mapping}
+
+The following table maps each lab requirement to the specific BookVault feature(s) that satisfy it.
+
+\begin{center}
+\renewcommand{\arraystretch}{1.3}
+\begin{longtable}{c p{6cm} p{5.5cm}}
+    \toprule
+    \textbf{\#} & \textbf{Lab Requirement} & \textbf{Feature(s)} \\
+    \midrule
+    \endfirsthead
+    \toprule
+    \textbf{\#} & \textbf{Lab Requirement} & \textbf{Feature(s)} \\
+    \midrule
+    \endhead
+    1 & Login \& Registration modules for secure user authentication & F1 -- Registration \& Login \\
+    2 & All user info (username, email, contact) encrypted before storage & F1 -- RSA encryption on profile fields \\
+    3 & Passwords hashed + salted before storage & F1 -- Custom SHA-256 + 128-bit salt \\
+    4 & Two-step authentication (primary credentials + second factor) & F1 -- Password (factor 1) + HMAC-TOTP (factor 2) \\
+    5 & Key Management Module (generation, distribution, storage, rotation) & F10 -- KMM with full key lifecycle \\
+    6 & Users can create, view, edit posts with all data auto-encrypted & F3 (borrow), F7 (reviews), F5 (fines), F6 (view) \\
+    7 & All critical data stored encrypted; no plaintext in DB & All features -- no sensitive data in plaintext \\
+    8 & MAC (CBC-MAC or HMAC) for data integrity \& tamper detection & F6 (HMAC on records), F9 (CBC-MAC on profile), F8 (HMAC on chat) \\
+    9 & Exclusively asymmetric encryption (RSA and ECC; no symmetric) & RSA (profile, chat) + ECC/ECIES (records, reviews, fines) \\
+    10 & At least two different asymmetric algorithms & RSA for profile \& chat; ECC for records \& reviews \\
+    11 & RBAC -- separate admin vs.\ regular user privileges & F2, A1--A5 -- enforced server-side \\
+    12 & Secure session management -- tokens, hijack prevention & Session module -- random tokens, HttpOnly, IP check, timeout \\
+    \bottomrule
+\end{longtable}
+\end{center}
+
+% ============================================================
+\section{Cryptography Plan}
+
+All algorithms are implemented \textbf{from scratch} in pure JavaScript (Node.js). No built-in cryptographic modules or third-party encryption libraries (e.g., Node.js \texttt{crypto} module, \texttt{bcrypt}, \texttt{jose}, \texttt{crypto-js}) are used. The only OS-level call permitted is \texttt{crypto.getRandomValues()} for entropy seeding.
+
+\begin{itemize}
+    \item \textbf{RSA (2048-bit):} Prime generation via Miller-Rabin primality test; key generation with $e = 65537$ and $d$ via extended Euclidean algorithm; encryption $m^e \bmod n$; decryption $c^d \bmod n$; manual OAEP-style padding.
+    \item \textbf{ECC / ECIES (secp256k1):} Elliptic curve point addition and scalar multiplication from scratch; ECIES: generate ephemeral key pair $\rightarrow$ compute shared secret via ECDH $\rightarrow$ derive key via manual KDF $\rightarrow$ encrypt message.
+    \item \textbf{SHA-256:} Full compression function with all 64 rounds, message scheduling, and Merkle--Damg\r{a}rd construction.
+    \item \textbf{HMAC-SHA256:} $\text{HMAC} = \text{SHA256}((K \oplus \text{opad}) \| \text{SHA256}((K \oplus \text{ipad}) \| \text{message}))$.
+    \item \textbf{CBC-MAC:} Manual block chaining with 128-bit blocks; XOR each block with previous ciphertext; final block serves as the MAC tag.
+    \item \textbf{TOTP:} $\text{OTP} = \text{HMAC-SHA256}(\text{secret},\ \lfloor\text{unix\_time} / 30\rfloor) \bmod 10^6$ $\rightarrow$ 6-digit code.
+\end{itemize}
+
+% ============================================================
+\section{Data Flow Summary}
+
+\begin{center}
+\renewcommand{\arraystretch}{1.3}
+\begin{tabular}{lll}
+    \toprule
+    \textbf{Patron Action} & \textbf{Crypto Applied} & \textbf{DB Stored As} \\
+    \midrule
+    Register (profile)     & RSA encrypt each field     & Ciphertext + CBC-MAC tag \\
+    Set password           & SHA-256(salt $\|$ password) & salt:hash \\
+    Borrow book            & ECC/ECIES encrypt record   & Ciphertext + HMAC tag \\
+    Return overdue         & ECC/ECIES encrypt fine     & Ciphertext + HMAC tag \\
+    Write review           & ECC/ECIES encrypt text     & Ciphertext + HMAC tag \\
+    Send chat message      & RSA encrypt body           & Ciphertext + HMAC tag \\
+    Login attempt          & SHA-256 verify             & Compare only \\
+    OTP entry              & HMAC-SHA256 verify         & Compare only \\
+    View My Vault          & HMAC verify $\rightarrow$ ECC decrypt & In-memory only \\
+    View profile           & CBC-MAC verify $\rightarrow$ RSA decrypt & In-memory only \\
+    \bottomrule
+\end{tabular}
+\end{center}
+
+% ============================================================
+\section{Tech Stack}
+
+\begin{center}
+\begin{tabular}{ll}
+    \toprule
+    \textbf{Layer} & \textbf{Technology} \\
+    \midrule
+    Backend        & Express.js on Node.js \\
+    Database       & Supabase (PostgreSQL) -- stores only ciphertext + MAC tags + metadata \\
+    Frontend       & React with TypeScript + Tailwind CSS v4 \\
+    Cryptography   & 100\% from scratch in JavaScript (no \texttt{crypto} module) \\
+    Session Store  & Supabase (PostgreSQL \texttt{sessions} table) \\
+    Deployment     & Local development server (\texttt{npm run dev}) \\
+    \bottomrule
+\end{tabular}
+\end{center}
+
+\textbf{Important note:} Supabase is used \textbf{solely as a PostgreSQL database} via its client SDK for data storage and retrieval. Supabase's built-in authentication (\texttt{supabase.auth}), Row Level Security policies, and Edge Functions are \textbf{not used} --- all authentication, encryption, and access control logic is implemented from scratch in the Express backend.
+
+% ============================================================
+\section{RBAC Privilege Matrix}
+
+\begin{center}
+\renewcommand{\arraystretch}{1.2}
+\begin{tabular}{lcc}
+    \toprule
+    \textbf{Action} & \textbf{Patron} & \textbf{Admin} \\
+    \midrule
+    Register / Login                         & \checkmark & \checkmark \\
+    View own profile (decrypted)             & \checkmark & $\times$ \\
+    Borrow / return books                    & \checkmark & $\times$ \\
+    Add / edit checkout records \& reviews   & \checkmark & $\times$ \\
+    Browse book catalog                      & \checkmark & \checkmark \\
+    Add / edit / delete books                & $\times$   & \checkmark \\
+    Manage user account status               & $\times$   & \checkmark \\
+    View encrypted record metadata           & $\times$   & \checkmark \\
+    Send / receive secure chat               & \checkmark & \checkmark \\
+    Pay fines                                & \checkmark & $\times$ \\
+    View fine management dashboard           & $\times$   & \checkmark \\
+    Rotate own keys                          & \checkmark & $\times$ \\
+    View audit logs                          & $\times$   & \checkmark \\
+    \bottomrule
+\end{tabular}
+\end{center}
+
+\end{document}

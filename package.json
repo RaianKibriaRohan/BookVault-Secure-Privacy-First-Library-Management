@@ -1,0 +1,19 @@
+{
+  "name": "bookvault",
+  "version": "1.0.0",
+  "private": true,
+  "description": "BookVault - Secure Privacy-First Library Management (CSE447 Lab Project)",
+  "scripts": {
+    "install:all": "npm install && npm --prefix server install && npm --prefix client install",
+    "dev": "concurrently -n server,client -c cyan,magenta \"npm --prefix server run dev\" \"npm --prefix client run dev\"",
+    "dev:server": "npm --prefix server run dev",
+    "dev:client": "npm --prefix client run dev",
+    "db:push": "node scripts/apply-schema.mjs",
+    "seed:admin": "npm --prefix server run seed:admin",
+    "test": "npm --prefix server test",
+    "build": "npm --prefix client run build"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}
