@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { cx } from '../lib/format'
@@ -52,21 +52,58 @@ function BookVaultMark({ size = 26 }: { size?: number }) {
 
 /** Counts down to the idle timeout so the session policy is visible, not silent. */
 function IdleCountdown() {
-  const { session } = useAuth()
+  const { session, refresh } = useAuth()
   const [now, setNow] = useState(Date.now())
+  const [lastActivity, setLastActivity] = useState(Date.now())
+  const [idle, setIdle] = useState(false)
+  const wasIdle = useRef(false)
 
+  // Track real user activity: mouse, keyboard, clicks
   useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), 30_000)
-    return () => clearInterval(timer)
-  }, [])
+    const onActivity = () => {
+      setLastActivity(Date.now())
+      setIdle(false)
+      // If we were idle and the user came back, tell the server so it resets the timer
+      if (wasIdle.current) {
+        wasIdle.current = false
+        void refresh()
+      }
+    }
+    window.addEventListener('mousemove', onActivity)
+    window.addEventListener('keydown', onActivity)
+    window.addEventListener('click', onActivity)
+    window.addEventListener('scroll', onActivity)
+    return () => {
+      window.removeEventListener('mousemove', onActivity)
+      window.removeEventListener('keydown', onActivity)
+      window.removeEventListener('click', onActivity)
+      window.removeEventListener('scroll', onActivity)
+    }
+  }, [refresh])
 
-  if (!session?.lastActiveAt) return null
+  // Tick every second and check if user has been idle for 5+ seconds
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const n = Date.now()
+      setNow(n)
+      if (n - lastActivity >= 5_000) {
+        setIdle(true)
+        wasIdle.current = true
+      }
+    }, 1_000)
+    return () => clearInterval(timer)
+  }, [lastActivity])
+
+  if (!session?.lastActiveAt || !idle) return null
   const deadline = new Date(session.lastActiveAt).getTime() + session.idleTimeoutMinutes * 60_000
-  const minutes = Math.max(0, Math.round((deadline - now) / 60_000))
+  const totalSeconds = Math.max(0, Math.round((deadline - now) / 1_000))
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds % 60
+  const display = minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`
 
   return (
-    <span className="hidden text-xs text-faint lg:inline" title={`Signed out automatically after ${session.idleTimeoutMinutes} minutes of inactivity`}>
-      idle timeout in {minutes}m
+    <span className="hidden text-xs text-faint lg:inline animate-pulse" title={`Signed out automatically after ${session.idleTimeoutMinutes * 60} seconds of inactivity`}>
+      ⏱ idle timeout in {display}
     </span>
   )
 }

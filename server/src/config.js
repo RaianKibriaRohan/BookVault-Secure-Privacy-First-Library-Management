@@ -1,7 +1,7 @@
 import 'dotenv/config'
 
 const num = (value, fallback) => {
-  const parsed = Number.parseInt(value ?? '', 10)
+  const parsed = Number.parseFloat(value ?? '')
   return Number.isFinite(parsed) ? parsed : fallback
 }
 
@@ -30,7 +30,7 @@ const config = Object.freeze({
   LOAN_DAYS: num(process.env.LOAN_DAYS, 14),
 
   // Session policy
-  SESSION_IDLE_MINUTES: num(process.env.SESSION_IDLE_MINUTES, 30),
+  SESSION_IDLE_MINUTES: num(process.env.SESSION_IDLE_MINUTES, 0.5),
   SESSION_ABSOLUTE_HOURS: num(process.env.SESSION_ABSOLUTE_HOURS, 12),
   SESSION_COOKIE: 'bv_session',
   CHALLENGE_TTL_MS: 60_000,
